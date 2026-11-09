@@ -202,6 +202,46 @@
     background: var(--gold-grad); -webkit-background-clip: text; background-clip: text;
   }
 
+  /* upper section: three of a kind silver, four or five gold, fewer than three red */
+  table.sheet td.t-silver { color: var(--silver); font-weight: 700; }
+  table.sheet td.t-gold { color: var(--gold-hi); font-weight: 700; text-shadow: 0 0 10px rgba(214, 169, 85, .45); }
+  table.sheet td.t-red { color: #d5493e; font-weight: 700; }
+  /* bonus box: a small counter up to 63, then the 50 */
+  table.sheet td.progress { font-family: var(--text); font-size: 12px; letter-spacing: .04em; color: var(--silver); padding: 4px 6px 5px; }
+  table.sheet td.progress span { display: block; }
+  table.sheet td.progress .bar { height: 3px; margin-top: 5px; background: rgba(214, 169, 85, .18); }
+  table.sheet td.progress .bar i { display: block; height: 100%; background: var(--gold); transition: width .4s ease; }
+  table.sheet td.earned { color: var(--gold-hi); font-weight: 700; text-shadow: 0 0 12px rgba(214, 169, 85, .6); }
+
+  /* the bonus celebration: shown once, the moment a player reaches 63 */
+  .celebrate {
+    position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, .62); cursor: pointer; overflow: hidden;
+    animation: cel-out .5s ease 2.7s forwards;
+  }
+  .celebrate .cel-box { text-align: center; animation: cel-pop .6s cubic-bezier(.2, 1.3, .4, 1) both; }
+  .celebrate .cel-title {
+    font-family: var(--display); font-size: 30px; font-weight: 700; letter-spacing: .14em;
+    color: var(--gold-hi); text-shadow: 0 0 24px rgba(214, 169, 85, .8);
+  }
+  .celebrate .cel-num {
+    font-family: var(--display); font-size: 88px; font-weight: 700; line-height: 1.1;
+    background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .celebrate .cel-sub { font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--silver); }
+  .celebrate .spark {
+    position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -4.5px; border-radius: 50%;
+    background: var(--gold-hi); box-shadow: 0 0 10px var(--gold);
+    animation: cel-spark 1.4s ease-out both;
+  }
+  @keyframes cel-pop { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes cel-spark { from { transform: translate(0, 0) scale(1.2); opacity: 1; } to { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; } }
+  @keyframes cel-out { to { opacity: 0; visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) {
+    .celebrate .spark { display: none; }
+    .celebrate .cel-box { animation: none; }
+  }
+
   .cathead { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; }
   .cathead small { font-size: 10px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--silver); }
   .ptitle .cathead small { font-family: var(--display); font-style: italic; font-size: 22px; font-weight: 400; letter-spacing: .02em; text-transform: none; color: var(--cream); }
@@ -422,6 +462,41 @@ function cardTotal(card) {
 }
 const gameOver = g => g.cards.every(card => CATS.every(([k]) => card[k] != null));
 const winnerOf = totals => totals[0] > totals[1] ? 0 : totals[1] > totals[0] ? 1 : -1;
+
+// upper section: how many dice of that face were rolled decides the colour of the score
+// three = silver, four or five = gold, fewer than three = red
+const TONE_HEX = { 't-gold': '#d6a955', 't-silver': '#aeb4bc', 't-red': '#d5493e' };
+function upperTone(key, v) {
+  if (v == null) return '';
+  const n = v / FACE[key];
+  return n >= 4 ? 't-gold' : n === 3 ? 't-silver' : 't-red';
+}
+// the bonus is earned at 63 in the upper section. This remembers the last totals seen, so the
+// celebration plays once, at the moment a player crosses 63, on whichever phone sees the change.
+let bonusSeen = null;
+function watchBonus() {
+  const g = S.game;
+  if (!g) { bonusSeen = null; return; }
+  const up = g.cards.map(upperSum);
+  if (bonusSeen && bonusSeen.game === g.n) {
+    up.forEach((u, i) => { if (bonusSeen.up[i] < 63 && u >= 63) celebrate(i); });
+  }
+  bonusSeen = { game: g.n, up };
+}
+function celebrate(i) {
+  document.querySelectorAll('.celebrate').forEach(el => el.remove());
+  let sparks = '';
+  for (let s = 0; s < 28; s++) {
+    const a = (s / 28) * Math.PI * 2, d = 130 + Math.random() * 170;
+    sparks += `<span class="spark" style="--dx:${(Math.cos(a) * d).toFixed(0)}px;--dy:${(Math.sin(a) * d).toFixed(0)}px;animation-delay:${(Math.random() * 0.2).toFixed(2)}s"></span>`;
+  }
+  const el = document.createElement('div');
+  el.className = 'celebrate';
+  el.innerHTML = `${sparks}<div class="cel-box"><div class="cel-title">63 reached</div><div class="cel-num">+50</div><div class="cel-sub">${esc(S.players[i])} earns the bonus</div></div>`;
+  el.addEventListener('click', () => el.remove());
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3300);
+}
 
 // c[f] = how many dice show face f (index 0 unused)
 const sumOf = c => [1, 2, 3, 4, 5, 6].reduce((s, f) => s + f * c[f], 0);
@@ -748,7 +823,10 @@ async function drawCard(e) {
       const card = e.cards[i];
       const cx = (COLS[i + 1] + COLS[i + 2]) / 2;
       let v = null, font = `600 24px ${SERIF}`, fill = CREAM;
-      if (r.k) v = card[r.k];
+      if (r.k) {
+        v = card[r.k];
+        if (v != null && UPPER.includes(r.k)) fill = TONE_HEX[upperTone(r.k, v)];
+      }
       else if (r.sum) v = upperSum(card);
       else if (r.bonus) v = upperSum(card) >= 63 ? 50 : null;
       else if (r.grand) { v = cardTotal(card); font = `700 26px ${SERIF}`; fill = GOLD; }
@@ -820,13 +898,17 @@ function sheetTable(g) {
     const open = active >= 0 && cards[active][key] == null;
     const cells = [0, 1].map(i => {
       const v = cards[i][key];
-      if (v != null) return `<td>${v}</td>`;
+      if (v != null) return `<td${UPPER.includes(key) ? ` class="${upperTone(key, v)}"` : ''}>${v}</td>`;
       return `<td class="blank${i === active ? ' mine' : ''}"></td>`;
     }).join('');
     const attr = open ? ` class="open" data-act="open" data-cat="${key}"` : '';
     return `<tr${attr}><th class="cat">${catLabel(key)}</th>${cells}</tr>`;
   };
   const ups = [0, 1].map(i => upperSum(cards[i]));
+  // the bonus box counts up to 63, then shows the 50
+  const bonusCell = s => s >= 63
+    ? '<td class="earned">50</td>'
+    : `<td class="progress"><span>${s} / 63</span><div class="bar"><i style="width:${Math.min(100, (s / 63) * 100).toFixed(1)}%"></i></div></td>`;
   return `
     <table class="sheet">
       <thead><tr>
@@ -836,7 +918,7 @@ function sheetTable(g) {
       <tbody>
         ${UPPER.map(row).join('')}
         <tr class="box"><th class="cat"><b>TOTAL</b></th>${ups.map(s => `<td>${s}</td>`).join('')}</tr>
-        <tr class="box"><th class="cat"><b>BONUS</b> <small>63 gives 50</small></th>${ups.map(s => s >= 63 ? '<td>50</td>' : '<td class="blank"></td>').join('')}</tr>
+        <tr class="box"><th class="cat"><b>BONUS</b> <small>63 gives 50</small></th>${ups.map(bonusCell).join('')}</tr>
         ${LOWER.map(row).join('')}
         <tr class="box grand"><th class="cat"><b>TOTAL</b></th>${[0, 1].map(i => `<td>${cardTotal(cards[i])}</td>`).join('')}</tr>
       </tbody>
@@ -1158,6 +1240,7 @@ function render() {
     </div>
     ${popupHtml()}`;
   hydratePhotos();
+  watchBonus();
 }
 
 /* ---------- events ---------- */
